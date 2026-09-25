@@ -12,7 +12,7 @@ export async function GET() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: apiKey,
-        query: "freight rates diesel fuel surcharge trucking market 2025",
+        query: `freight rates diesel fuel surcharge trucking market ${new Date().getFullYear()}`,
         search_depth: "basic",
         include_answer: false,
         max_results: 8,

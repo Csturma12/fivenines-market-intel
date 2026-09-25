@@ -22,11 +22,13 @@ export async function GET() {
     const dieselData = await dieselRes.json();
     const rows = dieselData?.response?.data ?? [];
 
-    const prices = rows.map((r: Record<string, unknown>) => ({
-      date: r.period,
-      price: Number(r.value),
-      unit: "$/gallon",
-    }));
+    const prices = rows
+      .filter((r: Record<string, unknown>) => r.value != null && r.value !== "" && r.value !== ".")
+      .map((r: Record<string, unknown>) => ({
+        date: r.period as string,
+        price: Number(r.value),
+        unit: "$/gallon",
+      }));
 
     const latest = prices[0] ?? null;
     const prev = prices[1] ?? null;

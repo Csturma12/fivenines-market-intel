@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 interface FuelData {
   latest: { date: string; price: number; unit: string } | null;
@@ -38,12 +38,28 @@ interface NewsData {
   error?: string;
 }
 
-function Badge({ value, prefix = "" }: { value: number | null; prefix?: string }) {
+function Badge({
+  value,
+  prefix = "",
+  neutral = false,
+}: {
+  value: number | null;
+  prefix?: string;
+  neutral?: boolean;
+}) {
   if (value === null) return <span className="text-gray-400 text-sm">—</span>;
   const up = value >= 0;
+  const colorClass = neutral
+    ? up
+      ? "text-blue-600"
+      : "text-slate-500"
+    : up
+    ? "text-red-600"
+    : "text-green-600";
   return (
-    <span className={`inline-flex items-center text-sm font-medium ${up ? "text-red-600" : "text-green-600"}`}>
-      {up ? "▲" : "▼"} {prefix}{Math.abs(value).toFixed(3)}
+    <span className={`inline-flex items-center text-sm font-medium ${colorClass}`}>
+      {up ? "▲" : "▼"} {prefix}
+      {Math.abs(value).toFixed(3)}
     </span>
   );
 }
@@ -61,19 +77,36 @@ export default function Dashboard() {
   const [macro, setMacro] = useState<MacroData | null>(null);
   const [news, setNews] = useState<NewsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const fetchGenRef = useRef(0);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    const gen = ++fetchGenRef.current;
+
     const [fuelRes, macroRes, newsRes] = await Promise.allSettled([
       fetch("/api/fuel").then((r) => r.json()),
       fetch("/api/macro").then((r) => r.json()),
       fetch("/api/news").then((r) => r.json()),
     ]);
-    if (fuelRes.status === "fulfilled") setFuel(fuelRes.value);
-    if (macroRes.status === "fulfilled") setMacro(macroRes.value);
-    if (newsRes.status === "fulfilled") setNews(newsRes.value);
-    setLastRefresh(new Date());
+
+    if (gen !== fetchGenRef.current) return;
+
+    let anySuccess = false;
+    if (fuelRes.status === "fulfilled") {
+      setFuel(fuelRes.value);
+      if (!fuelRes.value.error) anySuccess = true;
+    }
+    if (macroRes.status === "fulfilled") {
+      setMacro(macroRes.value);
+      if (!macroRes.value.error) anySuccess = true;
+    }
+    if (newsRes.status === "fulfilled") {
+      setNews(newsRes.value);
+      if (!newsRes.value.error) anySuccess = true;
+    }
+
+    if (anySuccess) setLastRefresh(new Date());
     setLoading(false);
   }, []);
 
@@ -82,6 +115,10 @@ export default function Dashboard() {
     const interval = setInterval(fetchAll, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchAll]);
+
+  const sortedHistory = fuel?.history
+    ? [...fuel.history].slice(0, 12).sort((a, b) => a.date.localeCompare(b.date))
+    : [];
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -94,7 +131,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-blue-200 text-xs hidden sm:block">
-              Last refresh: {lastRefresh.toLocaleTimeString()}
+              {lastRefresh ? `Last refresh: ${lastRefresh.toLocaleTimeString()}` : "Loading…"}
             </span>
             <button
               onClick={fetchAll}
@@ -108,14 +145,15 @@ export default function Dashboard() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-
         {/* Fuel Section */}
         <section>
           <h2 className="text-lg font-semibold text-gray-800 mb-4">⛽ Diesel Fuel Prices</h2>
           {loading && !fuel ? (
             <Spinner />
           ) : fuel?.error ? (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{fuel.error}</div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+              {fuel.error}
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
@@ -127,7 +165,9 @@ export default function Dashboard() {
                 <div className="mt-1 text-xs text-gray-500">as of {fuel?.latest?.date ?? "—"}</div>
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Week-over-Week Change</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+                  Week-over-Week Change
+                </div>
                 <div className="text-2xl font-bold mt-2">
                   <Badge value={fuel?.weekChange ?? null} prefix="$" />
                 </div>
@@ -136,10 +176,10 @@ export default function Dashboard() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
                 <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">12-Week Trend</div>
                 <div className="flex items-end gap-0.5 h-10">
-                  {(fuel?.history ?? []).slice(0, 12).reverse().map((p, i) => {
-                    const all = (fuel?.history ?? []).slice(0, 12).map((x) => x.price);
-                    const min = Math.min(...all);
-                    const max = Math.max(...all);
+                  {sortedHistory.map((p, i) => {
+                    const prices = sortedHistory.map((x) => x.price);
+                    const min = Math.min(...prices);
+                    const max = Math.max(...prices);
                     const pct = max === min ? 50 : ((p.price - min) / (max - min)) * 100;
                     return (
                       <div
@@ -162,7 +202,9 @@ export default function Dashboard() {
           {loading && !macro ? (
             <Spinner />
           ) : macro?.error ? (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{macro.error}</div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+              {macro.error}
+            </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {(macro?.metrics ?? []).map((m) => (
@@ -172,7 +214,7 @@ export default function Dashboard() {
                     {m.value != null ? m.value.toFixed(1) : "—"}
                   </div>
                   <div className="mt-1">
-                    <Badge value={m.change} />
+                    <Badge value={m.change} neutral />
                   </div>
                   <div className="mt-1 text-xs text-gray-400">{m.date ?? ""}</div>
                 </div>
@@ -187,7 +229,9 @@ export default function Dashboard() {
           {loading && !news ? (
             <Spinner />
           ) : news?.error ? (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">{news.error}</div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+              {news.error}
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {(news?.articles ?? []).map((a, i) => (
@@ -216,7 +260,8 @@ export default function Dashboard() {
 
         {/* Footer */}
         <footer className="text-center text-xs text-gray-400 pt-4 pb-8 border-t border-gray-200">
-          Data: EIA.gov · FRED / St. Louis Fed · Tavily News Search &nbsp;·&nbsp; Five Nines Logistics © {new Date().getFullYear()}
+          Data: EIA.gov · FRED / St. Louis Fed · Tavily News Search &nbsp;·&nbsp; Five Nines Logistics ©{" "}
+          {new Date().getFullYear()}
         </footer>
       </div>
     </main>
