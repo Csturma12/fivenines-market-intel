@@ -1,2 +1,0 @@
-# market-intel
-FIVE NINES MARKET INTEL SUB DOMAIN
