@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 interface FuelData {
   latest: { date: string; price: number; unit: string } | null;
   weekChange: number | null;
+  changeLabel: string;
   history: Array<{ date: string; price: number }>;
   updatedAt: string;
   error?: string;
@@ -171,7 +172,7 @@ export default function Dashboard() {
                 <div className="text-2xl font-bold mt-2">
                   <Badge value={fuel?.weekChange ?? null} prefix="$" />
                 </div>
-                <div className="mt-1 text-xs text-gray-500">vs prior week</div>
+                <div className="mt-1 text-xs text-gray-500">{fuel?.changeLabel ?? "vs prior week"}</div>
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
                 <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">12-Week Trend</div>

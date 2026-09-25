@@ -32,11 +32,25 @@ export async function GET() {
 
     const latest = prices[0] ?? null;
     const prev = prices[1] ?? null;
-    const weekChange = latest && prev ? (latest.price - prev.price).toFixed(3) : null;
+
+    let weekChange: number | null = null;
+    let changeLabel = "vs prior week";
+
+    if (latest && prev) {
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const daysDiff = Math.round(
+        (new Date(latest.date).getTime() - new Date(prev.date).getTime()) / msPerDay
+      );
+      changeLabel = `vs ${prev.date}`;
+      if (daysDiff <= 10) {
+        weekChange = Number((latest.price - prev.price).toFixed(3));
+      }
+    }
 
     return NextResponse.json({
       latest,
-      weekChange: weekChange ? Number(weekChange) : null,
+      weekChange,
+      changeLabel,
       history: prices,
       updatedAt: new Date().toISOString(),
     });
