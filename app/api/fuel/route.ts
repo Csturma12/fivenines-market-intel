@@ -1,0 +1,61 @@
+import { NextResponse } from "next/server";
+
+const EIA_BASE = "https://api.eia.gov/v2";
+
+export async function GET() {
+  const apiKey = process.env.EIA_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "EIA_API_KEY not configured" }, { status: 500 });
+  }
+
+  try {
+    // Weekly retail diesel prices (US average)
+    const dieselRes = await fetch(
+      `${EIA_BASE}/petroleum/pri/wfr/data/?api_key=${apiKey}&frequency=weekly&data[0]=value&facets[product][]=EPD2DXL0&facets[duoarea][]=NUS&sort[0][column]=period&sort[0][direction]=desc&length=12`,
+      { next: { revalidate: 3600 } }
+    );
+
+    if (!dieselRes.ok) {
+      throw new Error(`EIA API error: ${dieselRes.status}`);
+    }
+
+    const dieselData = await dieselRes.json();
+    const rows = dieselData?.response?.data ?? [];
+
+    const prices = rows
+      .filter((r: Record<string, unknown>) => r.value != null && r.value !== "" && r.value !== ".")
+      .map((r: Record<string, unknown>) => ({
+        date: r.period as string,
+        price: Number(r.value),
+        unit: "$/gallon",
+      }));
+
+    const latest = prices[0] ?? null;
+    const prev = prices[1] ?? null;
+
+    let weekChange: number | null = null;
+    let changeLabel = "vs prior week";
+
+    if (latest && prev) {
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const daysDiff = Math.round(
+        (new Date(latest.date).getTime() - new Date(prev.date).getTime()) / msPerDay
+      );
+      changeLabel = `vs ${prev.date}`;
+      if (daysDiff <= 10) {
+        weekChange = Number((latest.price - prev.price).toFixed(3));
+      }
+    }
+
+    return NextResponse.json({
+      latest,
+      weekChange,
+      changeLabel,
+      history: prices,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Fuel API error:", err);
+    return NextResponse.json({ error: "Failed to fetch fuel data" }, { status: 502 });
+  }
+}
